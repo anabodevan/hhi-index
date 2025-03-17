@@ -1,0 +1,263 @@
+---
+title: "Calculating Acceptance to Interethinic Marriage in Africa"
+categories: ["econometrics", "ggplot2", "R", "visualization", "survey"]
+description: "Using the Herfindahl-Hirschman Index to calculate acceptance of marriage to other ethinic groups, according to Afrobarometer"  
+date: 2025-03-15
+title-block-banner: true
+page-layout: article
+execute: 
+  message: false
+  warning: false
+format:
+  html:
+    code-fold: false
+    code-tools: true
+freeze: true
+image: image.png
+toc: true
+---
+
+## Introduction
+
+### Afrobarometer
+
+Afrobarometer is an non-partisan, non-profit company that conducts surveys that track public attitude towards democracy, economy, and civil society. Their survey rounds are merged and made available into a single data set on their website. The latest available data is from Round 9 (2023) and will be used in this project.
+
+### Herfindahl-Hirschman Index
+
+The [Herfindahl-Hirschman Index (HHI)](https://pmc.ncbi.nlm.nih.gov/articles/PMC10241462/) "was developed as a measure of industry concentration and is computed as the sum of the squared shares of each group in the population". However, when "shares of a population reflect ethnic (...) group percentages, the complement (...) is a measure of diversity"
+
+### Objectives and Disclaimer
+
+In this project, I intend to use HHI to calculate the **density of approval interethinic marriage had in surveyed countries**. This project does not intend to produce research material in any form, and does not consider the largely discussed [limitations](https://pubmed.ncbi.nlm.nih.gov/26188445/) HHI has. It's purpose is to act as an **data analysis project**, *not* a social sciences one.
+
+## Code
+
+Click the hyperlinks for the [data](https://www.afrobarometer.org/data/merged-data/) and [code book](https://www.afrobarometer.org/wp-content/uploads/2024/10/AB_R9.MergeCodebook_25Jun24.final_.pdf).
+
+```{r}
+library(pacman)
+
+pacman :: p_load("tidyverse", 
+                 "haven", # import and export spss files
+                 "rnaturalearthdata", # world map data from natural earth 
+                 "countrycode", # convert country names and country codes 
+                 "gt", # easily create presentation-ready display tables 
+                 "gtExtras") # extending 'gt' for beautiful html tables tables tables 
+```
+
+```{r}
+ab <- read_sav("R9.sav")
+
+ab[] <- lapply(ab, function(x) {attributes(x) <- NULL; x}) %>% 
+  as_tibble() # remove all the .sav metadata 
+
+ab %<>% 
+  mutate(country_name = case_when(
+    COUNTRY == 2 ~ "Angola",
+    COUNTRY == 3 ~ "Benin",
+    COUNTRY == 4 ~ "Botswana",
+    COUNTRY == 5 ~ "Burkina Faso",
+    COUNTRY == 6 ~ "Cabo Verde",
+    COUNTRY == 7 ~ "Cameroon",
+    COUNTRY == 8 ~ "Congo-Brazzaville",
+    COUNTRY == 9 ~ "Côte d'Ivoire",
+    COUNTRY == 10 ~ "Eswatini",
+    COUNTRY == 11 ~ "Ethiopia",
+    COUNTRY == 12 ~ "Gabon",
+    COUNTRY == 13 ~ "Gambia",
+    COUNTRY == 14 ~ "Ghana",
+    COUNTRY == 15 ~ "Guinea",
+    COUNTRY == 16 ~ "Kenya",
+    COUNTRY == 17 ~ "Lesotho",
+    COUNTRY == 18 ~ "Liberia",
+    COUNTRY == 19 ~ "Madagascar",
+    COUNTRY == 20 ~ "Malawi",
+    COUNTRY == 21 ~ "Mali",
+    COUNTRY == 22 ~ "Mauritania",
+    COUNTRY == 23 ~ "Mauritius",
+    COUNTRY == 24 ~ "Morocco",
+    COUNTRY == 25 ~ "Mozambique",
+    COUNTRY == 26 ~ "Namibia",
+    COUNTRY == 27 ~ "Niger",
+    COUNTRY == 28 ~ "Nigeria",
+    COUNTRY == 29 ~ "São Tomé and Príncipe",
+    COUNTRY == 30 ~ "Senegal",
+    COUNTRY == 31 ~ "Seychelles",
+    COUNTRY == 32 ~ "Sierra Leone",
+    COUNTRY == 33 ~ "South Africa",
+    COUNTRY == 34 ~ "Sudan",
+    COUNTRY == 35 ~ "Tanzania",
+    COUNTRY == 36 ~ "Togo",
+    COUNTRY == 37 ~ "Tunisia",
+    COUNTRY == 38 ~ "Uganda",
+    COUNTRY == 39 ~ "Zambia",
+    COUNTRY == 40 ~ "Zimbabwe")) %>% 
+  select(country_name, everything()) # create country_name variable for the 39 countries featured in the data set 
+```
+
+Using the code book, I selected the questions of interest
+
+-   Q88A: Please tell me whether you would like having a family member marry a person from a different ethnic group, dislike it, or not care?
+
+-   Q87B: (...) tell me whether you would like having people from this group as neighbours, dislike it, or not care: people from other ethnic groups?
+
+```{r}
+ab %>% 
+  select(country_name,
+         inter_marry = Q88A,
+         inter_neighboor = Q87B) -> df
+
+vlabels <- function(numeric_value) {
+  case_when(
+    numeric_value == 1 ~ "Strongly dislike",
+    numeric_value == 2 ~ "Somewhat dislike",
+    numeric_value == 3 ~ "Would not care",
+    numeric_value == 4 ~ "Somewhat like",
+    numeric_value == 5 ~ "Strongly like",
+    TRUE ~ as.character(numeric_value))
+}
+
+df %>% 
+   count(inter_marry) %>% 
+   arrange(desc(n))
+```
+
+The answer values for both question for Seychelles and Tunisia was 94. It is unclear whether it was due to a data entry error, if the question was not asked in the country, or any other factors. Regardless, Seychelles and Tunisia were removed from the data set, as were Refusals and Don't Know answers.
+
+```{r}
+df <- df %>%
+  filter(
+    country_name != "Seychelles" &
+    country_name != "Tunisia" &
+    inter_marry != "8" &
+    inter_marry != "9" &
+    inter_neighboor != "8" &
+      inter_neighboor  != "9"
+  )
+
+df <- df %>%
+  mutate(inter_marry = vlabels(inter_marry),
+         inter_neighboor = vlabels(inter_neighboor))
+```
+
+## Visualizations
+
+```{r}
+col <- c("Strongly dislike" = "#780000", 
+         "Somewhat dislike" = "#c1121f", 
+         "Would not care" = "#fdf0d5",
+         "Somewhat like" = "#669bbc", 
+         "Strongly like" = "#003049")
+
+source <- "Source: Afrobarometer Survey Round 9"
+
+library(patchwork)
+```
+
+```{r}
+p1 <- ggplot(data = df, aes(x = inter_marry)) +
+  geom_bar(aes(fill = inter_marry), color = "black", linewidth = 1) +  
+  scale_fill_manual(values = col) + 
+  labs(
+    title = "Would you like if...",
+    x = "",
+    y = "Frequency",
+    subtitle = "a family member married another ethinicity?"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))  
+
+p2 <- ggplot(data = df, aes(x = inter_neighboor)) +
+  geom_bar(aes(fill = inter_neighboor), color = "black", linewidth = 1) +  
+  scale_fill_manual(values = col) + 
+  labs(
+    subtitle = "your neighboor was of another ethnicity?",
+    x = "",
+    y = "",
+    caption = source
+  ) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x  = element_text(angle = 45, hjust = 1))  
+
+barplots <- p1 + p2 + plot_layout(ncol = 2, widths = c(1, 1))
+
+print(barplots)
+```
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+
+approval_rates <- df %>%
+  group_by(country_name) %>%
+  summarise(
+    approval_rate = mean(inter_marry %in% c("Somewhat like", "Strongly like"), na.rm = TRUE)
+  )
+
+africa_map <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(continent == "Africa") %>%
+  select(name_long, geometry)
+
+africa_map <- africa_map %>%
+  left_join(approval_rates, by = c("name_long" = "country_name"))
+
+ggplot(data = africa_map) +
+  geom_sf(aes(fill = approval_rate), color = "black", size = 0.2) +
+  scale_fill_gradient(name = "Approval Rate", low = "#fdf0d5", high = "#780000", na.value = "grey50") +
+  labs(
+    title = "Approval of a family member marrying another ethinicity",
+    subtitle = "Darker colours represent higher approval",
+    caption = source
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  )
+
+```
+
+```{r}
+library(DT)
+
+approval_rates_marry <- df %>%
+  group_by(country_name) %>%
+  summarise(
+    approval_rate_marry = mean(inter_marry %in% c("Somewhat like", "Strongly like"), na.rm = TRUE)
+  )
+
+approval_rates_neighboor <- df %>%
+  group_by(country_name) %>%
+  summarise(
+    approval_rate_neighboor = mean(inter_neighboor %in% c("Somewhat like", "Strongly like"), na.rm = TRUE)
+  )
+
+approval_rates <- approval_rates_marry %>%
+  left_join(approval_rates_neighboor, by = "country_name")
+
+datatable(approval_rates,
+          caption = "Approval for Interethnic Marriage and Neighborhood, by Country") %>%
+  formatRound(columns = c("approval_rate_marry", "approval_rate_neighboor"), digits = 2)
+```
+
+## Conclusions
+
+### General Trends 
+
+-   In most countries, the approval rate for having a neighbor from another ethnicity (`approval_rate_neighboor`) is higher than the approval rate for interethnic marriage (`approval_rate_marry`).
+
+### Country-Specific
+
+-   Gambia has the highest approval rates for both inter-ethnic marriage (85.87%) and inter-ethnic neighbors (85.37%), suggesting a high level of ethnic diversity tolerance and a society that itself is very diverse.
+
+-   Sudan has low approval rates for both inter ethnic marriage (15.79%) and inter-ethnic neighbors (22.13%). Unsurprisingly, considering the ethnic tensions and current civil war in the country.
+
+-   South Africa has a low approval rate for inter-ethnic marriage (18.63%) but a moderate approval rate for inter-ethnic neighbors (32.24%). This suggests that while South Africans are somewhat accepting of ethnic diversity in their neighborhoods, they are less comfortable with inter ethnic marriage.
